@@ -44,6 +44,8 @@
 #define beammp_stdout std::cout
 #endif
 
+#include "Logger.h"
+
 namespace Utils {
     inline std::vector<std::string> Split(const std::string& String, const std::string& delimiter) {
         std::vector<std::string> Val;
@@ -58,7 +60,7 @@ namespace Utils {
         if (!s.empty())
             Val.push_back(s);
         return Val;
-    };
+    }
     inline std::string ExpandEnvVars(const std::string& input) {
         std::string result;
         std::regex envPattern(R"(%([^%]+)%|\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([^}]+)\})");
@@ -299,7 +301,6 @@ namespace Utils {
             return "";
         }
     }
-};
 
     template<typename T>
     inline std::vector<char> PrependHeader(const T& data) {

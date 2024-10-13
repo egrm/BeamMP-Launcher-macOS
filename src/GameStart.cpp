@@ -58,12 +58,11 @@ std::filesystem::path GetGamePath() {
             if (ini.contains("filesystem") && std::get<std::map<std::string, std::string>>(ini["filesystem"]).contains("UserPath"))
                 userPath = Utils::ToWString(std::get<std::map<std::string, std::string>>(ini["filesystem"])["UserPath"]);
 
-            if (!userPath.empty() && Path.empty())
-                if (userPath = Utils::ExpandEnvVars(userPath); std::filesystem::exists(userPath)) {
-                    Path = userPath;
-                    debug(L"Using custom user folder path from startup.ini: " + Path.wstring());
-                } else
-                    warn(L"Found custom user folder path (" + userPath + L") in startup.ini but it doesn't exist, skipping");
+            if (userPath = Utils::ExpandEnvVars(userPath); std::filesystem::exists(userPath)) {
+                Path = userPath;
+                debug(L"Using custom user folder path from startup.ini: " + Path.wstring());
+            } else
+                warn(L"Found custom user folder path (" + userPath + L") in startup.ini but it doesn't exist, skipping");
         }
 
         if (Path.empty()) {
@@ -95,12 +94,11 @@ std::filesystem::path GetGamePath() {
 
                     }
 
-                    if (!userPath.empty() && Path.empty())
-                        if (userPath = std::filesystem::path(Utils::ExpandEnvVars(userPath)); std::filesystem::exists(userPath)) {
-                            Path = userPath;
-                            debug(L"Using custom user folder path from BeamNG.Drive.ini: " + Path.wstring());
-                        } else
-                            warn(L"Found custom user folder path (" + userPath + L") in BeamNG.Drive.ini but it doesn't exist, skipping");
+                    if (userPath = std::filesystem::path(Utils::ExpandEnvVars(userPath)); std::filesystem::exists(userPath)) {
+                        Path = userPath;
+                        debug(L"Using custom user folder path from BeamNG.Drive.ini: " + Path.wstring());
+                    } else
+                        warn(L"Found custom user folder path (" + userPath + L") in BeamNG.Drive.ini but it doesn't exist, skipping");
                 }
             }
 
