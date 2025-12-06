@@ -13,6 +13,13 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#elif defined(__APPLE__)
+#include "vdf_parser.hpp"
+#include <pwd.h>
+#include <spawn.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 #include "Logger.h"
@@ -48,7 +55,7 @@ std::filesystem::path GetGamePath() {
             startupIni.close();
 
             auto ini = Utils::ParseINI(contents);
-            if (ini.empty()) 
+            if (ini.empty())
                 warn("Failed to parse startup.ini");
             else
                 debug("Successfully parsed startup.ini");
@@ -57,12 +64,14 @@ std::filesystem::path GetGamePath() {
             if (ini.contains("filesystem") && std::get<std::map<std::string, std::string>>(ini["filesystem"]).contains("UserPath"))
                 userPath = Utils::ToWString(std::get<std::map<std::string, std::string>>(ini["filesystem"])["UserPath"]);
 
-            if (!userPath.empty() && Path.empty())
+            if (!userPath.empty() && Path.empty()) {
                 if (userPath = Utils::ExpandEnvVars(userPath); std::filesystem::exists(userPath)) {
                     Path = userPath;
                     debug(L"Using custom user folder path from startup.ini: " + Path.wstring());
-                } else
+                } else {
                     warn(L"Found custom user folder path (" + userPath + L") in startup.ini but it doesn't exist, skipping");
+                }
+            }
         }
 
         if (Path.empty()) {
@@ -91,15 +100,16 @@ std::filesystem::path GetGamePath() {
                     if (ini.contains("userFolder")) {
                         userPath = Utils::ToWString(std::get<std::string>(ini["userFolder"]));
                         userPath.erase(0, userPath.find_first_not_of(L" \t"));
-
                     }
 
-                    if (!userPath.empty() && Path.empty())
+                    if (!userPath.empty() && Path.empty()) {
                         if (userPath = std::filesystem::path(Utils::ExpandEnvVars(userPath)); std::filesystem::exists(userPath)) {
                             Path = userPath;
                             debug(L"Using custom user folder path from BeamNG.Drive.ini: " + Path.wstring());
-                        } else
+                        } else {
                             warn(L"Found custom user folder path (" + userPath + L") in BeamNG.Drive.ini but it doesn't exist, skipping");
+                        }
+                    }
                 }
             }
 
@@ -128,6 +138,8 @@ std::filesystem::path GetGamePath() {
     Path += "current/";
     return Path;
 }
+// NOTE: macOS native launcher not implemented - use Wine to run Windows version
+// When cross-compiling for Windows on macOS, the Windows GetGamePath() is used instead
 #endif
 
 #if defined(_WIN32)
@@ -197,6 +209,29 @@ void StartGame(std::string Dir) {
     } else {
         waitpid(pid, &status, 0);
         error("Game Closed! launcher closing soon");
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    exit(2);
+}
+#elif defined(__APPLE__)
+void StartGame(std::string Dir) {
+    info("Starting BeamNG.drive on macOS...");
+    std::string appPath = Dir + "/BeamNG.drive.app";
+
+    std::string command = "open -a \"" + appPath + "\"";
+    for (int i = 0; i < options.game_arguments_length; i++) {
+        command += " --args ";
+        command += options.game_arguments[i];
+    }
+
+    int result = system(command.c_str());
+
+    if (result != 0) {
+        error("Failed to Launch the game! launcher closing soon");
+    } else {
+        info("Game Launched!");
+        info("Launcher will close when game exits");
     }
 
     std::this_thread::sleep_for(std::chrono::seconds(5));

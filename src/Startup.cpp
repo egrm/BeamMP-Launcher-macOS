@@ -4,7 +4,6 @@
  SPDX-License-Identifier: AGPL-3.0-or-later
 */
 
-
 #include "zip_file.h"
 #include <charconv>
 #include <cstring>
@@ -14,9 +13,9 @@
 #if defined(_WIN32)
 #elif defined(__linux__)
 #include <unistd.h>
-#elif defined (__APPLE__)
-#include <unistd.h>
+#elif defined(__APPLE__)
 #include <libproc.h>
+#include <unistd.h>
 #endif // __APPLE__
 #include "Http.h"
 #include "Logger.h"
@@ -80,6 +79,8 @@ beammp_fs_string GetEN() {
     return L"BeamMP-Launcher.exe";
 #elif defined(__linux__)
     return "BeamMP-Launcher";
+#elif defined(__APPLE__)
+    return "BeamMP-Launcher";
 #endif
 }
 
@@ -114,7 +115,7 @@ fs::path GetBP(const beammp_fs_char* P) {
     // should instead be placed in Application Support.
     proc_pidpath(pid, path, sizeof(path));
     fspath = std::string(path);
- #else
+#else
     fspath = beammp_fs_string(P);
 #endif
     fspath = fs::weakly_canonical(fspath.string() + "/..");
@@ -212,10 +213,10 @@ void CheckForUpdates(const std::string& CV) {
 #else
             info("Downloading Launcher update " + LatestHash);
             if (HTTP::Download(
-                "https://backend.beammp.com/builds/launcher?download=true"
-                "&pk="
-                    + PublicKey + "&branch=" + Branch,
-                GetBP() / (beammp_wide("new_") + GetEN()), LatestHash)) {
+                    "https://backend.beammp.com/builds/launcher?download=true"
+                    "&pk="
+                        + PublicKey + "&branch=" + Branch,
+                    GetBP() / (beammp_wide("new_") + GetEN()), LatestHash)) {
                 std::error_code ec;
                 fs::remove(Back, ec);
                 if (ec == std::errc::permission_denied) {
@@ -237,7 +238,6 @@ void CheckForUpdates(const std::string& CV) {
         info("Launcher version is up to date. Latest version: " + LatestVersion);
     TraceBack++;
 }
-
 
 #ifdef _WIN32
 void LinuxPatch() {
@@ -288,6 +288,14 @@ void InitLauncher() {
     CheckLocalKey();
     CheckForUpdates(std::string(GetVer()) + GetPatch());
 }
+#elif defined(__APPLE__)
+
+void InitLauncher() {
+    info("BeamMP Launcher v" + GetVer() + GetPatch());
+    CheckName();
+    CheckLocalKey();
+    CheckForUpdates(std::string(GetVer()) + GetPatch());
+}
 #endif
 
 size_t DirCount(const fs::path& path) {
@@ -320,7 +328,7 @@ void EnableMP() {
     auto Size = fs::file_size(File);
     if (Size < 2)
         return;
-    std::ifstream db(File);
+    std::ifstream db(File.c_str());
     if (db.is_open()) {
         std::string Data(Size, 0);
         db.read(&Data[0], Size);
@@ -332,7 +340,7 @@ void EnableMP() {
         }
         if (d.contains("mods") && d["mods"].contains("multiplayerbeammp")) {
             d["mods"]["multiplayerbeammp"]["active"] = true;
-            std::ofstream ofs(File);
+            std::ofstream ofs(File.c_str());
             if (ofs.is_open()) {
                 ofs << d.dump();
                 ofs.close();
