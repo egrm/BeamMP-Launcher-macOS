@@ -81,47 +81,20 @@ Download [llvm-mingw](https://github.com/mstorsjo/llvm-mingw/releases) (ucrt-mac
 git clone https://github.com/egrm/BeamMP-Launcher-macOS.git
 cd BeamMP-Launcher-macOS
 
-# Bootstrap vcpkg
-git clone https://github.com/Microsoft/vcpkg.git
-cd vcpkg && ./bootstrap-vcpkg.sh && cd ..
+# First-time setup: downloads vcpkg, installs deps, configures, builds, and links
+make setup
 
-# Install Windows cross-compile dependencies
-./vcpkg/vcpkg install --triplet=x64-mingw-static
-
-# Configure
-export PATH="$HOME/llvm-mingw/bin:$PATH"
-mkdir build_windows && cd build_windows
-
-cmake .. \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake \
-    -DVCPKG_TARGET_TRIPLET=x64-mingw-static \
-    -DCMAKE_SYSTEM_NAME=Windows \
-    -DCMAKE_C_COMPILER="$HOME/llvm-mingw/bin/x86_64-w64-mingw32-clang" \
-    -DCMAKE_CXX_COMPILER="$HOME/llvm-mingw/bin/x86_64-w64-mingw32-clang++" \
-    -DCMAKE_RC_COMPILER="$HOME/llvm-mingw/bin/x86_64-w64-mingw32-windres"
-
-# Patch httplib for mingw compatibility
-python3 -c "
-p = 'vcpkg_installed/x64-mingw-static/include/httplib.h'
-c = open(p).read().replace(
-    'if (cancel_handle) { ::GetAddrInfoExCancel(&cancel_handle); }',
-    '// mingw fix')
-open(p, 'w').write(c)"
-
-# Build + manual link (vcpkg calls powershell.exe during link which doesn't exist on macOS)
-cmake --build . --config Release -j$(sysctl -n hw.ncpu) || true
-
-x86_64-w64-mingw32-clang++ -o BeamMP-Launcher.exe \
-  CMakeFiles/Launcher.dir/src/*.obj \
-  CMakeFiles/Launcher.dir/src/Network/*.obj \
-  CMakeFiles/Launcher.dir/src/Security/*.obj \
-  -static -Lvcpkg_installed/x64-mingw-static/lib \
-  -lcurl -lssl -lcrypto -lzlib \
-  -lbrotlienc -lbrotlidec -lbrotlicommon \
-  -lws2_32 -lcrypt32 -lbcrypt -lwldap32 -ladvapi32 -lshell32 -luser32 \
-  -liphlpapi -lsecur32
+# Install into your CrossOver bottle (kills running BeamNG, copies exe, deletes stale BeamMP.zip)
+make install
 ```
+
+For subsequent builds after code changes:
+
+```bash
+make all install
+```
+
+The Makefile expects llvm-mingw at `/opt/llvm-mingw`. Override with `make MINGW_PATH=/your/path all`.
 
 ## Credits
 

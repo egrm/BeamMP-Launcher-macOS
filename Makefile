@@ -1,4 +1,4 @@
-MINGW_PATH ?= $(HOME)/llvm-mingw
+MINGW_PATH ?= /opt/llvm-mingw
 BUILD_DIR   = build_windows
 VCPKG_LIBS  = $(BUILD_DIR)/vcpkg_installed/x64-mingw-static/lib
 OBJS        = $(BUILD_DIR)/CMakeFiles/Launcher.dir/src/*.obj \
