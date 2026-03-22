@@ -1,148 +1,142 @@
-# BeamMP Launcher — macOS Experimental Fork
+# BeamMP Launcher - macOS Fork
 
-This is an **experimental fork** of the BeamMP Launcher, focused on getting **BeamNG.drive multiplayer running on macOS** using CrossOver + D3DMetal.
+Experimental fork of the [BeamMP Launcher](https://github.com/BeamMP/BeamMP-Launcher) that fixes multiplayer for **macOS via CrossOver/D3DMetal**.
 
-👉 **This is NOT an official BeamMP launcher**  
-👉 **Windows users should use the official release**
+> **This is NOT the official BeamMP launcher.** Windows and Linux users should use the [official release](https://beammp.com/).
 
-This fork exists only for testing and research purposes.
+## What's Fixed
 
----
+The official BeamMP launcher has two bugs that break multiplayer under Wine/CrossOver:
 
-## ⚠️ Status (Experimental)
+### 1. TCP Receive (`MSG_WAITALL` broken under Wine)
 
-Multiplayer **launches**, **connects to servers**, and **vehicles sync correctly** — but stability still varies.
+Wine's implementation of `MSG_WAITALL` returns partial data without error. The launcher uses this flag to receive compressed packets — when it gets a truncated packet, zlib decompression fails with `Z_DATA_ERROR (-3)`.
 
-Common issues I'm investigating:
-- occasional freezes during heavy physics events  
-- reconnect loops  
-- TCP/UDP desync in some situations  
-- sensitivity to Wine/CrossOver versions
+**Fix:** Replaced single `recv(..., MSG_WAITALL)` call with a manual receive loop that accumulates bytes until the full packet arrives.
 
-This fork includes several fixes:
-- improved zlib compression/decompression handling  
-- corrected TCP/UDP packet reception (partial reads, buffer issues)
+```cpp
+// Before (broken under Wine):
+recv(Sock, Data.data(), Header, MSG_WAITALL);
 
-Some of these problems are also reported on the official BeamMP GitHub.
-A few of them match issues that I already fixed in this fork
-(for example the zlib decompression failures that appear when the server sends a high volume of data quickly).
-
-Because of this, please keep in mind that the official launcher itself
-is not always perfectly stable — especially under heavier network load.
-So not everything you experience is caused by macOS or this fork.
-
-https://github.com/BeamMP/BeamMP-Launcher/issues
-
----
-
-## 🔧 How to Build (macOS → Windows cross‑compile)
-
-A simplified build guide:
-
-### Requirements  
-- Homebrew  
-- CMake  
-- Python 3  
-- llvm-mingw (ucrt, macOS universal) — https://github.com/mstorsjo/llvm-mingw/releases  
-- vcpkg (handled automatically)
-
-### Steps
-```
-git clone https://github.com/Alien4042x/BeamMP-Launcher.git
-cd BeamMP-Launcher
-chmod +x build_windows_on_macos.sh
-./build_windows_on_macos.sh
+// After:
+while (received < Header) {
+    int chunk = recv(Sock, Data.data() + received, Header - received, 0);
+    if (chunk <= 0) return "";
+    received += chunk;
+}
 ```
 
-Output:
-```
-release/BeamMP-Launcher.exe
-```
+**File:** `src/Network/VehicleEvent.cpp`
 
-⚠️ **Important:**  
-To ensure the launcher works correctly, you must also copy all required DLL files from release folder:
+### 2. Zlib Decompression (streaming inflate)
 
-## 🚀 How to Install & Run on macOS (CrossOver / CX)
+Replaced `uncompress()` with streaming `inflate()` + `inflateInit2()`. The streaming API is more robust and handles edge cases better under Wine's zlib environment.
 
-This fork is meant for macOS users running BeamNG.drive through **CrossOver**.
+**File:** `src/Compressor.cpp`
 
-### 1️⃣ Download BeamMP Client
-Before using this launcher, download the official BeamMP client:
-https://beammp.com/download
+### Result
 
-Do NOT run the downloaded Windows launcher — we will replace it.
+Without these fixes, you get:
+- `zlib uncompress() failed (code: -3, message: data error)` on every connection
+- Can't see other players' cars
+- No vehicle sync, position updates, or flood mod effects
+- Chat works (small TCP packets that don't hit the bug)
 
-### 2️⃣ Download macOS Experimental Launcher Build
-Go to the **Releases** tab of this fork and download the ZIP containing:
-- `BeamMP-Launcher.exe`
-- required `.dll` files
+With these fixes: full multiplayer works — vehicle sync, position updates, mods, everything.
 
-Extract the ZIP.
+## Additional Client-Side Patches
 
-### 3️⃣ Copy the launcher into your CrossOver Bottle
-Move all extracted files into:
+The launcher re-downloads `BeamMP.zip` (the in-game mod) on every launch. This mod has issues under Wine that require patching after each download. A `patch-beammp` script is included that fixes:
 
-```
-/Users/<your username>/<Crossover/CXBottles>/Steam/drive_c/users/crossover/AppData/Roaming/BeamMP-Launcher
-```
+1. **`MPGameNetwork.lua:495`** - Network handler crashes on unknown packet codes, killing all subsequent packet processing (vehicle sync, position updates). Fixed with nil guard.
+2. **`MPVehicleGE.lua:1908`** - Vehicle coupler crash when receiving data for unknown vehicles. Fixed with nil check.
+3. **`multiplayer.js`** - `isLoggedIn()` callback never fires under Wine, causing stuck login screen. Fixed by making it return `true` immediately.
 
-(If the folder doesn't exist, run the official client once — it will create it.)
+Run `patch-beammp` **before** launching BeamMP — it watches for the download and patches the zip before the game loads it.
 
-### 4️⃣ Start Steam (inside CrossOver)
-BeamMP requires Steam running in the same bottle.
+## Building (Cross-compile on macOS)
 
-Open CrossOver → start the Steam app from that bottle.
+### Prerequisites
 
-### 5️⃣ Run the Launcher
-Double‑click:
-
-```
-BeamMP-Launcher.exe
+```bash
+brew install cmake
 ```
 
-A black console window should appear first — then the BeamMP launcher UI.
+Download [llvm-mingw](https://github.com/mstorsjo/llvm-mingw/releases) (ucrt-macos-universal) and extract to `~/llvm-mingw`.
 
-### 6️⃣ First-time Setup
-On first launch:
-- open BeamNG through Steam
-- check that the **Multiplayer** tab appears in the main menu
-- close the game
+### Build
 
-❗ *Sometimes the first run doesn’t hook correctly.*  
+```bash
+git clone https://github.com/egrm/BeamMP-Launcher-macOS.git
+cd BeamMP-Launcher-macOS
 
-### 7️⃣ Start Multiplayer
-Launch the BeamMP launcher again, then run the game through it.
+# Bootstrap vcpkg
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg && ./bootstrap-vcpkg.sh && cd ..
 
-### 8️⃣ Successful Load Indicator
-If you see:
+# Install Windows dependencies
+./vcpkg/vcpkg install --triplet=x64-mingw-static
 
+# Configure
+export PATH="$HOME/llvm-mingw/bin:$PATH"
+mkdir build_windows && cd build_windows
+
+cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake \
+    -DVCPKG_TARGET_TRIPLET=x64-mingw-static \
+    -DCMAKE_SYSTEM_NAME=Windows \
+    -DCMAKE_C_COMPILER="$HOME/llvm-mingw/bin/x86_64-w64-mingw32-clang" \
+    -DCMAKE_CXX_COMPILER="$HOME/llvm-mingw/bin/x86_64-w64-mingw32-clang++" \
+    -DCMAKE_RC_COMPILER="$HOME/llvm-mingw/bin/x86_64-w64-mingw32-windres"
+
+# Patch httplib for mingw
+python3 -c "
+p = 'vcpkg_installed/x64-mingw-static/include/httplib.h'
+with open(p) as f: c = f.read()
+c = c.replace('if (cancel_handle) { ::GetAddrInfoExCancel(&cancel_handle); }', '// mingw fix')
+with open(p, 'w') as f: f.write(c)
+"
+
+# Build (link manually to avoid powershell dependency)
+cmake --build . --config Release -j$(sysctl -n hw.ncpu) 2>&1 || true
+
+# Manual link (vcpkg tries to call powershell.exe during link step)
+VCPKG_LIBS="vcpkg_installed/x64-mingw-static/lib"
+x86_64-w64-mingw32-clang++ -o BeamMP-Launcher.exe \
+  CMakeFiles/Launcher.dir/src/*.obj \
+  CMakeFiles/Launcher.dir/src/Network/*.obj \
+  CMakeFiles/Launcher.dir/src/Security/*.obj \
+  -static -L"$VCPKG_LIBS" \
+  -lcurl -lssl -lcrypto -lzlib \
+  -lbrotlienc -lbrotlidec -lbrotlicommon \
+  -lws2_32 -lcrypt32 -lbcrypt -lwldap32 -ladvapi32 -lshell32 -luser32 \
+  -liphlpapi -lsecur32
 ```
-Mod caching directory: ./Resources
+
+### Install
+
+Copy the built `BeamMP-Launcher.exe` to your CrossOver bottle:
+
+```bash
+LAUNCHER="$HOME/Library/Application Support/CrossOver/Bottles/Steam/drive_c/users/crossover/AppData/Roaming/BeamMP-Launcher"
+cp "$LAUNCHER/BeamMP-Launcher.exe" "$LAUNCHER/BeamMP-Launcher.exe.backup"
+cp build_windows/BeamMP-Launcher.exe "$LAUNCHER/"
 ```
 
-…then everything is hooked correctly and MP should start working.
+## Usage
 
----
+1. Run `patch-beammp` in a terminal (watches for BeamMP.zip download)
+2. Launch BeamMP through CrossOver
+3. The script patches the mod zip before the game loads it
+4. Click Multiplayer, Direct Connect to your server
 
-## 🧪 macOS Compatibility Notes
+## Credits
 
-This fork currently targets:
-- CrossOver 25  
-- Steam BeamNG (Windows build)
-
-This project **does not modify the game** — only the launcher.
-
----
-
-## 📫 Feedback / Issues
-
-If you want to test or report bugs:
-- open a GitHub Issue  
-- or comment under my latest YouTube video showcasing BeamNG multiplayer on macOS
-
----
+- [BeamMP](https://beammp.com/) — the multiplayer mod
+- [Alien4042x](https://github.com/Alien4042x/BeamMP-Launcher) — original macOS fork with the key networking fixes
+- Built and tested on macOS with CrossOver 24 + D3DMetal + BeamNG.drive 0.38.4
 
 ## License
 
-This project remains licensed under the original **GNU AGPL v3**.  
-BeamMP Launcher © 2024 BeamMP Ltd., team & contributors.
+AGPL-3.0 — same as the official BeamMP Launcher.

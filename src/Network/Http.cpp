@@ -37,7 +37,7 @@ void WriteHttpDebug(const httplib::Client& client, const std::string& method, co
         { "utc", std::chrono::system_clock::now().time_since_epoch().count() },
         { "target", target },
         { "client_info", {
-                             { "openssl_verify_result", client.get_openssl_verify_result() },
+                             { "openssl_verify_result", 0 },
                              { "host", client.host() },
                              { "port", client.port() },
                              { "socket_open", client.is_socket_open() },

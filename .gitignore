@@ -22,6 +22,7 @@ out/
 # Scripts
 # Ignore all sh except the build script
 /*.sh
+!patch-beammp.sh
 !build_windows_on_macos.sh
 
 # VCPKG
