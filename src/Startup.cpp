@@ -5,6 +5,7 @@
 */
 
 #include "zip_file.h"
+#include "ZipPatcher.h"
 #include <charconv>
 #include <cstring>
 #include <httplib.h>
@@ -388,6 +389,13 @@ void PreGame(const beammp_fs_string& GamePath) {
                            "&pk="
                     + PublicKey + "&branch=" + Branch,
                 ZipPath, LatestHash);
+        }
+
+        // Patch BeamMP.zip for Wine/CrossOver compatibility
+        try {
+            PatchBeamMPZip(ZipPath);
+        } catch (const std::exception& e) {
+            error(std::string("[ZipPatcher] Failed: ") + e.what());
         }
 
         beammp_fs_string Target(GetGamePath() / beammp_wide("mods/unpacked/beammp"));
