@@ -34,10 +34,27 @@ std::string replaceAll(std::string s, const std::string& from, const std::string
 
 std::string applyPatches(const std::string& filename, std::string content) {
     if (filename == "lua/ge/extensions/MPGameNetwork.lua") {
+        content = "-- Patched by BeamMP-Launcher-macOS\n" + content;
         content = replaceAll(content,
             "HandleNetwork[code](data)",
             "local handler = HandleNetwork[code]; if handler then handler(data) end");
-        info("[ZipPatcher] Patched MPGameNetwork.lua (HandleNetwork nil guard)");
+        // Fix deadlock: non-blocking connect() + immediate send() fails,
+        // launcherConnected stays false forever. Add frame-based retry.
+        content = replaceAll(content,
+            "local function onUpdate(dt)",
+            "local _retryFrames = 0\nlocal function onUpdate(dt)");
+        content = replaceAll(content,
+            "if heartbeatTimer >= 1 and MPCoreNetwork.isMPSession() and launcherConnected then",
+            "if TCPLauncherSocket ~= nop and not launcherConnected then\n"
+            "\t\t_retryFrames = _retryFrames + 1\n"
+            "\t\tif _retryFrames % 60 == 0 then\n"
+            "\t\t\tM.send('A')\n"
+            "\t\tend\n"
+            "\telseif _retryFrames > 0 then\n"
+            "\t\t_retryFrames = -1\n"
+            "\tend\n"
+            "\tif heartbeatTimer >= 1 and MPCoreNetwork.isMPSession() and launcherConnected then");
+        info("[ZipPatcher] Patched MPGameNetwork.lua (HandleNetwork nil guard + connect retry)");
     }
     else if (filename == "lua/ge/extensions/MPVehicleGE.lua") {
         content = replaceAll(content,
